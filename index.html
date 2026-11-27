@@ -1,0 +1,2047 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f5f3ed">
+<title>급여 예산</title>
+<!--
+  급여 예산 — 단일 파일 웹 앱
+  외부 CDN·서버 없이 이 파일 하나로 바로 동작합니다.
+  데이터는 이 브라우저의 localStorage에 자동 저장되고, JSON으로 내보내기/가져오기가 가능합니다.
+  클라우드(예: Supabase) 동기화는 아래 스크립트의 '스토리지 레이어'에서 load/save 어댑터만 교체하면 됩니다.
+-->
+<style>
+  :root{
+    --bg:#f5f3ed;
+    --card:#ffffff;
+    --line:#e6e1d6;
+    --line-soft:#f1ede4;
+    --hover:#faf8f3;
+    --ink:#1b1a17;
+    --ink-soft:#403d37;
+    --muted:#8a8478;
+    --accent:#2f6b4f;
+    --accent-soft:#eef5f0;
+    --danger:#ad463c;
+    --danger-soft:#fbecea;
+    --radius:20px;
+    --shadow:0 1px 2px rgba(27,26,23,.04), 0 10px 26px rgba(27,26,23,.05);
+    --safe-bottom:env(safe-area-inset-bottom, 0px);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#131311;
+      --card:#1e1e1b;
+      --line:#2f2f2a;
+      --line-soft:#262621;
+      --hover:#242420;
+      --ink:#f3f0e9;
+      --ink-soft:#d2ccc0;
+      --muted:#958f83;
+      --accent:#86c9a5;
+      --accent-soft:#1c2b23;
+      --danger:#e59b92;
+      --danger-soft:#2f1f1c;
+      --shadow:0 1px 2px rgba(0,0,0,.45), 0 10px 26px rgba(0,0,0,.35);
+    }
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0;padding:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Pretendard","Malgun Gothic","Noto Sans KR",system-ui,sans-serif;
+    font-size:16px;line-height:1.45;-webkit-font-smoothing:antialiased;
+    font-variant-numeric:tabular-nums;
+  }
+  button{font-family:inherit}
+  .app{max-width:760px;margin:0 auto;padding:18px 16px calc(40px + var(--safe-bottom))}
+
+  /* ---------- 상단 ---------- */
+  .topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:2px 2px 16px}
+  .brand{display:flex;align-items:center;gap:9px;font-weight:700;letter-spacing:-.02em;font-size:15px}
+  .brand-mark{display:grid;place-items:center;width:30px;height:30px;border-radius:10px;background:var(--ink);color:var(--bg);font-size:14px;font-weight:800}
+  .month-nav{display:flex;align-items:center;gap:1px;background:var(--card);border:1px solid var(--line);border-radius:13px;padding:3px;box-shadow:var(--shadow)}
+  .icon-btn{width:30px;height:30px;border:0;background:transparent;color:var(--ink-soft);font-size:17px;line-height:1;border-radius:9px;cursor:pointer;display:grid;place-items:center}
+  .icon-btn:hover:not(:disabled){background:var(--hover)}
+  .icon-btn:disabled{opacity:.28;cursor:default}
+  .month-pick{position:relative;display:flex;align-items:center}
+  .month-pick select{
+    appearance:none;-webkit-appearance:none;border:0;background:transparent;color:var(--ink);
+    font-size:14px;font-weight:600;padding:6px 20px 6px 8px;border-radius:9px;cursor:pointer;letter-spacing:-.01em;
+  }
+  .month-pick select:hover{background:var(--hover)}
+  .month-pick select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+  .month-pick .chev{position:absolute;right:7px;pointer-events:none;font-size:10px;color:var(--muted)}
+
+  /* ---------- 제목 ---------- */
+  .page-head{padding:4px 4px 14px}
+  .page-title{margin:0;font-size:19px;font-weight:800;letter-spacing:-.03em}
+  .page-sub{margin:3px 0 0;font-size:13px;color:var(--muted)}
+
+  .warn{margin:0 0 12px;padding:11px 14px;border-radius:12px;background:var(--danger-soft);color:var(--danger);font-size:13px;line-height:1.5}
+
+  /* ---------- 요약 카드 ---------- */
+  .summary{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:20px 20px 18px;margin-bottom:14px}
+  .sum-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .sum-block{display:flex;flex-direction:column;gap:3px}
+  .sum-block + .sum-block{border-left:1px solid var(--line-soft);padding-left:16px}
+  .sum-label{font-size:12.5px;font-weight:600;color:var(--muted)}
+  .sum-value{font-size:16px;font-weight:700;letter-spacing:-.02em;color:var(--ink-soft)}
+  .balance{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-top:16px;padding-top:16px;border-top:1px dashed var(--line)}
+  .balance-label{display:block;font-size:12.5px;font-weight:600;color:var(--muted);margin-bottom:2px}
+  .balance-num{font-size:clamp(28px,7.4vw,36px);font-weight:800;letter-spacing:-.035em;line-height:1.1}
+  .balance-num em{font-style:normal;font-size:.46em;font-weight:600;color:var(--muted);margin-left:2px;letter-spacing:0}
+  .balance-num.negative{color:var(--danger)}
+  .balance-cap{font-size:11.5px;color:var(--muted);padding-bottom:5px;white-space:nowrap}
+  .bar{height:6px;border-radius:99px;background:var(--line-soft);overflow:hidden;margin-top:16px}
+  .bar > span{display:block;height:100%;width:0;background:var(--accent);border-radius:99px;transition:width .28s ease}
+  .paid-line{display:flex;justify-content:space-between;gap:10px;margin-top:8px;font-size:12.5px;color:var(--muted)}
+  .paid-line b{color:var(--ink-soft);font-weight:700}
+
+  /* ---------- 목록 카드 ---------- */
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);margin-bottom:14px;overflow:hidden}
+  .card-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:16px 18px 8px}
+  .card-title{margin:0;font-size:13px;font-weight:800;letter-spacing:.02em;color:var(--ink-soft)}
+  .card-title small{margin-left:5px;font-size:12px;font-weight:600;color:var(--muted);letter-spacing:0}
+  .card-total{font-size:13.5px;font-weight:700;color:var(--ink-soft);letter-spacing:-.02em}
+  .list{list-style:none;margin:0;padding:0 10px 4px}
+  .row{display:grid;align-items:center;gap:4px;padding:6px;border-radius:14px;transition:background .15s ease}
+  .row.expense{grid-template-columns:38px minmax(0,1fr) 138px 30px;grid-template-areas:"chk name amt del"}
+  .row.income{grid-template-columns:minmax(0,1fr) 138px 30px;grid-template-areas:"name amt del"}
+  .row + .row{box-shadow:inset 0 1px 0 var(--line-soft)}
+  .row:hover{background:var(--hover)}
+  .row .check{grid-area:chk}
+  .row .name{grid-area:name}
+  .row .amount{grid-area:amt}
+  .row .del{grid-area:del}
+  .check{
+    width:30px;height:30px;border-radius:50%;border:1.5px solid var(--line);background:transparent;
+    color:var(--muted);font-size:14px;font-weight:800;line-height:1;display:grid;place-items:center;letter-spacing:0;
+    cursor:pointer;transition:background .15s ease,border-color .15s ease,color .15s ease;padding:0;
+  }
+  .check:hover{border-color:var(--accent);color:var(--accent)}
+  .check:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .row.is-paid{background:var(--accent-soft)}
+  .row.is-paid:hover{background:var(--accent-soft)}
+  .row.is-paid .check{background:var(--accent);border-color:var(--accent);color:var(--card)}
+  input.name{
+    min-width:0;width:100%;border:0;background:transparent;color:var(--ink);
+    font-family:inherit;font-size:15px;font-weight:600;letter-spacing:-.015em;
+    padding:9px 6px;border-radius:9px;
+  }
+  input.name::placeholder{color:var(--muted);font-weight:500}
+  input.name:focus{outline:none;background:var(--card);box-shadow:inset 0 0 0 1px var(--line)}
+  input.amount{
+    width:100%;border:0;background:transparent;color:var(--ink);
+    font-family:inherit;font-size:15px;font-weight:700;letter-spacing:-.02em;
+    text-align:right;padding:9px 8px;border-radius:9px;
+  }
+  input.amount:focus{outline:none;background:var(--card);box-shadow:inset 0 0 0 1px var(--line)}
+  .row.is-paid input.name{color:var(--muted);text-decoration:line-through;text-decoration-thickness:1.5px;text-decoration-color:var(--muted)}
+  .row.is-paid input.amount{color:var(--muted)}
+  .del{
+    width:28px;height:28px;border:0;border-radius:9px;background:transparent;color:var(--muted);
+    font-size:17px;line-height:1;cursor:pointer;display:grid;place-items:center;opacity:.55;transition:opacity .15s,color .15s,background .15s;
+  }
+  .del:hover,.del:focus-visible{opacity:1;color:var(--danger);background:var(--danger-soft);outline:none}
+  .empty{padding:16px 10px 18px;text-align:center;font-size:13.5px;color:var(--muted)}
+  .add{
+    display:flex;align-items:center;justify-content:center;gap:6px;
+    margin:2px 12px 14px;padding:11px 12px;width:calc(100% - 24px);
+    border:1px dashed var(--line);border-radius:13px;background:transparent;
+    color:var(--muted);font-size:13.5px;font-weight:600;cursor:pointer;transition:color .15s,border-color .15s,background .15s;
+  }
+  .add:hover{color:var(--accent);border-color:var(--accent);background:var(--accent-soft)}
+
+  /* ---------- 도구 ---------- */
+  .tools{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+  .btn{
+    display:inline-flex;align-items:center;justify-content:center;gap:6px;
+    padding:10px 14px;border:1px solid var(--line);border-radius:12px;background:var(--card);
+    color:var(--ink-soft);font-size:13.5px;font-weight:600;cursor:pointer;
+    box-shadow:0 1px 1px rgba(27,26,23,.03);transition:border-color .15s,color .15s,background .15s;
+  }
+  .btn:hover{border-color:var(--ink-soft);color:var(--ink)}
+  .btn.primary{background:var(--ink);border-color:var(--ink);color:var(--bg)}
+  .btn.primary:hover{opacity:.9}
+  .btn.danger-solid{background:var(--danger);border-color:var(--danger);color:#fff}
+  .btn.ghost{border-color:transparent;background:transparent;box-shadow:none}
+  .btn.ghost:hover{background:var(--hover)}
+  .btn.ghost.danger{color:var(--danger)}
+  .btn.ghost.danger:hover{background:var(--danger-soft)}
+  .status{display:flex;align-items:center;gap:7px;margin:18px 3px 0;font-size:12px;color:var(--muted)}
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--muted);flex:none}
+  .dot.saved{background:var(--accent)}
+  .dot.saving{background:#c99a2e}
+  .dot.error{background:var(--danger)}
+  .hint{margin:10px 3px 0;font-size:12px;line-height:1.6;color:var(--muted)}
+
+  /* ---------- 다이얼로그 ---------- */
+  dialog{
+    border:0;padding:0;border-radius:20px;background:var(--card);color:var(--ink);
+    width:min(440px,calc(100vw - 32px));max-width:min(440px,calc(100vw - 32px));
+    box-shadow:0 24px 70px rgba(0,0,0,.3);
+  }
+  dialog::backdrop{background:rgba(20,20,18,.42)}
+  .dlg-inner{padding:22px 20px 18px}
+  .dlg-title{margin:0 0 6px;font-size:17px;font-weight:800;letter-spacing:-.025em}
+  .dlg-desc{margin:0 0 16px;font-size:13px;line-height:1.55;color:var(--muted);white-space:pre-line}
+  .dlg-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:20px}
+  .field{margin:0 0 14px}
+  .f-label{display:block;font-size:12px;font-weight:700;color:var(--ink-soft);margin:0 0 6px}
+  .f-hint{margin:6px 0 0;font-size:12px;color:var(--muted)}
+  select.txt{
+    width:100%;border:1px solid var(--line);background-color:var(--card);color:var(--ink);
+    font-family:inherit;font-size:15px;padding:10px 34px 10px 12px;border-radius:11px;
+    text-align:left;text-align-last:left;
+    appearance:none;-webkit-appearance:none;-moz-appearance:none;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5 11 1.5' fill='none' stroke='%238a8478' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat:no-repeat;
+    background-position:right 13px center;
+  }
+  select.txt:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+  .pick-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .check-field{display:flex;align-items:flex-start;gap:9px;font-size:13.5px;color:var(--ink-soft);line-height:1.45;cursor:pointer;padding:2px 0}
+  .check-field input{width:17px;height:17px;margin:1px 0 0;accent-color:var(--accent);flex:none}
+  .check-field input:disabled + span{color:var(--muted)}
+  .radio-group{display:flex;flex-direction:column;gap:8px;margin-top:2px}
+  .radio{display:flex;align-items:center;gap:9px;font-size:14px;color:var(--ink-soft);cursor:pointer}
+  .radio input{width:17px;height:17px;accent-color:var(--accent);margin:0}
+  .help-line{margin:0 0 10px;font-size:13.5px;line-height:1.6;color:var(--ink-soft)}
+  .help-line b{font-weight:700}
+
+  /* ---------- 잠금 화면 ---------- */
+  .brand-group{display:flex;align-items:center;gap:4px}
+  .lock-btn{width:32px;height:32px;border:1px solid var(--line);background:var(--card);border-radius:10px;box-shadow:var(--shadow);font-size:13px}
+  .lock-btn:hover{background:var(--hover)}
+  body.locked{overflow:hidden}
+  body.locked .app{visibility:hidden}
+  .lock{
+    position:fixed;inset:0;z-index:80;display:none;place-items:center;
+    padding:24px 18px calc(24px + var(--safe-bottom));
+    background:radial-gradient(120% 80% at 50% 0%, rgba(47,107,79,.12), transparent 62%), var(--bg);
+    overscroll-behavior:contain;
+  }
+  body.locked .lock{display:grid}
+  .lock-card{
+    width:min(360px,100%);background:var(--card);border:1px solid var(--line);
+    border-radius:26px;box-shadow:0 24px 60px rgba(20,20,18,.14);
+    padding:26px 22px 20px;text-align:center;
+  }
+  .lock-brand{display:flex;align-items:center;justify-content:center;gap:8px;font-weight:700;font-size:13.5px;letter-spacing:-.02em;color:var(--ink-soft);margin-bottom:18px}
+  .lock-icon{display:grid;place-items:center;width:46px;height:46px;border-radius:15px;background:var(--accent-soft);font-size:20px;margin:0 auto 14px}
+  .lock-title{margin:0 0 7px;font-size:18px;font-weight:800;letter-spacing:-.03em;line-height:1.35}
+  .lock-desc{margin:0 0 18px;font-size:13px;line-height:1.55;color:var(--muted);white-space:pre-line}
+  .lock-desc.err{color:var(--danger)}
+  .pin-wrap{position:relative;display:flex;justify-content:center;gap:10px;margin:2px 0 4px}
+  .pin-cell{
+    width:52px;height:58px;border-radius:15px;border:1.5px solid var(--line);
+    background:var(--bg);display:grid;place-items:center;color:var(--ink);
+    font-size:24px;font-weight:800;letter-spacing:.02em;
+    transition:border-color .15s ease,background .15s ease;
+  }
+  .pin-cell.on{border-color:var(--accent);background:var(--accent-soft)}
+  .pin-cell.dot::after{content:"";width:11px;height:11px;border-radius:50%;background:var(--ink)}
+  .pin-input{
+    position:absolute;inset:0;width:100%;height:100%;opacity:0;
+    border:0;background:transparent;color:transparent;caret-color:transparent;
+    font-size:16px;letter-spacing:2px;
+  }
+  .pin-wrap.shake{animation:pinShake .42s cubic-bezier(.36,.07,.19,.97)}
+  @keyframes pinShake{
+    10%,90%{transform:translateX(-2px)}
+    20%,80%{transform:translateX(3px)}
+    30%,50%,70%{transform:translateX(-6px)}
+    40%,60%{transform:translateX(6px)}
+  }
+  .pin-tools{display:flex;align-items:center;justify-content:center;gap:12px;margin:0 2px 12px;min-height:24px}
+  .pin-peek{border:0;background:transparent;color:var(--muted);font-size:12.5px;font-weight:700;cursor:pointer;padding:4px 6px;border-radius:8px}
+  .pin-peek:hover{background:var(--hover);color:var(--ink-soft)}
+  .lock-actions{display:flex;flex-direction:column;gap:8px}
+  .lock-actions .btn{width:100%;padding:12px 14px;font-size:14px}
+  .lock-keep{display:flex;align-items:center;justify-content:center;gap:8px;margin:14px 0 0;font-size:12.5px;color:var(--muted);cursor:pointer;line-height:1.4}
+  .lock-keep input{width:16px;height:16px;accent-color:var(--accent);margin:0;flex:none}
+  .lock-foot{margin:14px 0 0;font-size:11.5px;line-height:1.6;color:var(--muted)}
+  .lock-busy{margin:14px 0 0;font-size:12px;color:var(--muted)}
+  .lock-detail{margin:10px 0 0;font-size:11px;line-height:1.5;color:var(--muted);word-break:break-word}
+  .spin{display:inline-block;width:13px;height:13px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;vertical-align:-2px;margin-right:6px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .btn:disabled{opacity:.45;cursor:default}
+  .btn.primary:disabled:hover{opacity:.45}
+  @media (max-width:400px){
+    .pin-cell{width:46px;height:54px;font-size:22px;border-radius:13px}
+    .pin-wrap{gap:8px}
+    .lock-card{padding:22px 16px 18px;border-radius:22px}
+    .lock-title{font-size:17px}
+  }
+
+  /* ---------- 토스트 ---------- */
+  .toast{
+    position:fixed;left:50%;bottom:calc(20px + var(--safe-bottom));transform:translate(-50%,16px);
+    display:flex;align-items:center;gap:14px;max-width:calc(100vw - 28px);
+    background:#20211f;color:#fff;border-radius:13px;padding:12px 15px;font-size:13.5px;
+    box-shadow:0 12px 32px rgba(0,0,0,.28);opacity:0;pointer-events:none;transition:opacity .22s,transform .22s;z-index:95;
+  }
+  .toast.show{opacity:1;transform:translate(-50%,0);pointer-events:auto}
+  .toast button{border:0;background:transparent;color:#9fe0bd;font-size:13.5px;font-weight:800;cursor:pointer;padding:2px 0;white-space:nowrap}
+
+  /* ---------- 모바일 ---------- */
+  @media (max-width:600px){
+    .app{padding:14px 12px calc(30px + var(--safe-bottom))}
+    .brand span.brand-name{display:none}
+    .page-title{font-size:18px}
+    .summary{padding:18px 16px 16px}
+    .row.expense{grid-template-columns:34px minmax(0,1fr) 30px;grid-template-areas:"chk name del" "chk amt amt";padding:7px 6px 9px}
+    .row.income{grid-template-columns:minmax(0,1fr) 30px;grid-template-areas:"name del" "amt amt";padding:7px 6px 9px}
+    .row.expense .check{align-self:start;margin-top:6px}
+    .row.expense input.name,.row.income input.name{font-size:16px;padding:5px 6px}
+    .row input.amount{font-size:16px;padding:2px 6px 3px;text-align:right}
+    .row.expense input.amount{padding-left:6px}
+    .row + .row{box-shadow:inset 0 1px 0 var(--line-soft)}
+    .list{padding:0 8px 2px}
+    .tools{gap:7px}
+    .tools .btn{flex:1 1 auto;min-width:calc(50% - 7px);justify-content:center;font-size:13px;padding:11px 10px}
+    .tools .btn.ghost{min-width:auto;flex:0 0 auto}
+    .dlg-actions .btn{flex:0 0 auto;min-width:84px}
+    .check{width:32px;height:32px;font-size:15px}
+  }
+
+  @media print{
+    body{background:#fff}
+    .lock,.tools,.add,.del,.check,.toast,.topbar,.warn{display:none !important}
+    .card,.summary{box-shadow:none;border-color:#ddd}
+  }
+</style>
+</head>
+<body class="locked">
+<div class="app">
+  <header class="topbar">
+    <div class="brand-group">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">₩</span>
+        <span class="brand-name">급여 예산</span>
+      </div>
+      <button type="button" class="icon-btn lock-btn" id="btnLock" title="잠금" aria-label="잠금">🔒</button>
+    </div>
+    <div class="month-nav" role="group" aria-label="달 이동">
+      <button type="button" class="icon-btn" id="prevMonth" aria-label="이전 달">‹</button>
+      <div class="month-pick">
+        <select id="monthSelect" aria-label="보고 있는 달"></select>
+        <span class="chev" aria-hidden="true">▼</span>
+      </div>
+      <button type="button" class="icon-btn" id="nextMonth" aria-label="다음 달">›</button>
+    </div>
+  </header>
+
+  <div class="page-head">
+    <h1 class="page-title" id="pageTitle">급여 예산</h1>
+    <p class="page-sub" id="pageSub">불러오는 중…</p>
+  </div>
+
+  <div class="warn" id="warn" hidden>이 브라우저에서는 자동 저장을 쓸 수 없어, 이번 화면에서만 데이터가 유지됩니다. JSON으로 내보내 보관해 주세요.</div>
+
+  <section class="summary" aria-label="이번 달 요약">
+    <div class="sum-row">
+      <div class="sum-block">
+        <span class="sum-label">수입</span>
+        <span class="sum-value" id="sumIncome">0원</span>
+      </div>
+      <div class="sum-block">
+        <span class="sum-label">지출</span>
+        <span class="sum-value" id="sumExpense">0원</span>
+      </div>
+    </div>
+    <div class="balance">
+      <div>
+        <span class="balance-label">남는 금액</span>
+        <div class="balance-num"><span id="sumBalance">0</span><em>원</em></div>
+      </div>
+      <span class="balance-cap">수입 − 지출</span>
+    </div>
+    <div class="bar" role="presentation"><span id="paidBar"></span></div>
+    <div class="paid-line">
+      <span>납부 완료 <b id="sumPaid">0원</b></span>
+      <span>미납 <b id="sumUnpaid">0원</b></span>
+    </div>
+  </section>
+
+  <section class="card" aria-label="수입">
+    <div class="card-head">
+      <h2 class="card-title">수입 <small id="incomeCount">0건</small></h2>
+      <span class="card-total" id="incomeTotal">0원</span>
+    </div>
+    <ul class="list" id="incomeList"></ul>
+    <button type="button" class="add" id="btnAddIncome">＋ 수입 항목 추가</button>
+  </section>
+
+  <section class="card" aria-label="지출">
+    <div class="card-head">
+      <h2 class="card-title">지출 <small id="expenseCount">0건</small></h2>
+      <span class="card-total" id="expenseTotal">0원</span>
+    </div>
+    <ul class="list" id="expenseList"></ul>
+    <button type="button" class="add" id="btnAddExpense">＋ 지출 항목 추가</button>
+  </section>
+
+  <div class="tools">
+    <button type="button" class="btn primary" id="btnNewMonth">＋ 새 달 만들기</button>
+    <button type="button" class="btn" id="btnCopy">전월 항목 불러오기</button>
+    <button type="button" class="btn" id="btnExport">JSON 내보내기</button>
+    <button type="button" class="btn" id="btnImport">JSON 가져오기</button>
+    <button type="button" class="btn ghost" id="btnHelp">도움말</button>
+    <button type="button" class="btn ghost danger" id="btnDeleteMonth">이 달 삭제</button>
+  </div>
+
+  <p class="status"><span class="dot" id="saveDot"></span><span id="saveStatus">클라우드에 자동 저장됩니다</span></p>
+  <p class="hint">이름과 금액은 눌러서 바로 고칠 수 있어요. 왼쪽 ㅇ를 누르면 납부 완료로 표시됩니다. 4자리 비밀번호를 아는 기기에서는 같은 예산이 그대로 열립니다.</p>
+
+  <input type="file" id="fileInput" accept=".json,application/json" hidden>
+</div>
+
+<div class="lock" id="lock" role="dialog" aria-modal="true" aria-labelledby="lockTitle">
+  <div class="lock-card">
+    <div class="lock-brand"><span class="brand-mark" aria-hidden="true">₩</span><span>급여 예산</span></div>
+    <div class="lock-icon" id="lockIcon" aria-hidden="true">🔒</div>
+    <h1 class="lock-title" id="lockTitle">불러오는 중…</h1>
+    <p class="lock-desc" id="lockDesc"></p>
+
+    <div id="pinStage" hidden>
+      <div class="pin-wrap" id="pinWrap">
+        <span class="pin-cell" data-i="0"></span>
+        <span class="pin-cell" data-i="1"></span>
+        <span class="pin-cell" data-i="2"></span>
+        <span class="pin-cell" data-i="3"></span>
+        <input class="pin-input" id="pinInput" type="password" inputmode="numeric" maxlength="4"
+               autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
+               aria-label="4자리 숫자 비밀번호">
+      </div>
+      <div class="pin-tools">
+        <button type="button" class="pin-peek" id="pinPeek">보기</button>
+        <button type="button" class="pin-peek" id="pinClearPin" hidden>이 기기 저장 지우기</button>
+      </div>
+      <div class="lock-actions">
+        <button type="button" class="btn primary" id="pinOk">열기</button>
+      </div>
+      <label class="lock-keep"><input type="checkbox" id="pinKeep"><span>이 기기에서 잠금 유지 (자동 잠금 해제)</span></label>
+    </div>
+
+    <div id="lockErrorActions" hidden>
+      <div class="lock-actions">
+        <button type="button" class="btn primary" id="lockRetry">다시 시도</button>
+      </div>
+    </div>
+
+    <p class="lock-busy" id="lockBusy" hidden><span class="spin" aria-hidden="true"></span><span id="lockBusyText"></span></p>
+    <p class="lock-detail" id="lockDetail" hidden></p>
+    <p class="lock-foot" id="lockFoot">비밀번호를 잊으면 데이터를 열 수 없습니다.<br>예산은 Supabase에 저장되고, 이 번호로만 열립니다.</p>
+  </div>
+</div>
+
+<dialog id="dialog" aria-labelledby="dlgTitle">
+  <div class="dlg-inner">
+    <h2 class="dlg-title" id="dlgTitle"></h2>
+    <p class="dlg-desc" id="dlgDesc"></p>
+    <div id="dlgBody"></div>
+    <div class="dlg-actions">
+      <button type="button" class="btn ghost" id="dlgCancel">취소</button>
+      <button type="button" class="btn primary" id="dlgOk">확인</button>
+    </div>
+  </div>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite">
+  <span id="toastMsg"></span>
+  <button type="button" id="toastAction" hidden></button>
+</div>
+
+<noscript><p style="padding:24px;text-align:center">이 앱을 쓰려면 브라우저에서 JavaScript를 켜 주세요.</p></noscript>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<script>
+(function () {
+  'use strict';
+
+  /* =========================================================
+     1. 상수
+     ========================================================= */
+  var SCHEMA_VERSION = 1;
+  var MAX_AMOUNT = 999999999999;
+
+  /* Supabase 프로젝트 — publishable 키는 공개되어도 되는 키입니다. */
+  var SUPABASE_URL = 'https://rctkrtdqxjucaahxstwl.supabase.co';
+  var SUPABASE_ANON_KEY = 'sb_publishable_xbrQmFk7v4P5sbzkbbBynA_p0Jy58h7';
+
+  /* 이 기기에 남기는 자동 잠금 해제용 비밀번호 */
+  var PIN_STORE_KEY = 'salary-budget/pin';
+  var PIN_KEEP_KEY = 'salary-budget/pin-keep';
+
+  /* 입력 후 클라우드로 저장하기까지의 지연(ms) */
+  var SAVE_DELAY = 600;
+
+  /* =========================================================
+     2. 순수 로직 — 화면과 무관한 계산/데이터 함수
+        (그대로 떼어 테스트하거나 다른 화면에서 재사용할 수 있습니다)
+     ========================================================= */
+  var Core = {
+    KEY_RE: /^\d{4}-(0[1-9]|1[0-2])$/,
+
+    pad: function (n) {
+      return String(n).padStart(2, '0');
+    },
+
+    uid: function () {
+      return 'x' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    },
+
+    /** 금액 문자열/숫자 → 0 이상의 안전한 정수 */
+    parseAmount: function (value) {
+      if (typeof value === 'number') {
+        if (!isFinite(value)) return 0;
+        return Math.min(MAX_AMOUNT, Math.max(0, Math.round(value)));
+      }
+      var digits = String(value == null ? '' : value).replace(/[^0-9]/g, '');
+      if (!digits) return 0;
+      var n = parseInt(digits, 10);
+      if (!isFinite(n)) return 0;
+      return Math.min(MAX_AMOUNT, n);
+    },
+
+    /** 1216870 → "1,216,870" (음수는 앞에 -) */
+    format: function (value) {
+      var n = Math.round(Number(value) || 0);
+      var sign = n < 0 ? '-' : '';
+      var s = String(Math.abs(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+      return sign + s;
+    },
+
+    won: function (value) {
+      return Core.format(value) + '원';
+    },
+
+    /** "2026-12" → "2026년 12월" */
+    monthLabel: function (key) {
+      var parts = String(key).split('-');
+      return parts[0] + '년 ' + parseInt(parts[1], 10) + '월';
+    },
+
+    /** "2026-12" → "12월 급여 예산" */
+    monthTitle: function (key) {
+      var parts = String(key).split('-');
+      return parseInt(parts[1], 10) + '월 급여 예산';
+    },
+
+    nextMonthKey: function (key) {
+      var parts = String(key).split('-');
+      var y = parseInt(parts[0], 10);
+      var m = parseInt(parts[1], 10);
+      return m === 12 ? (y + 1) + '-01' : y + '-' + Core.pad(m + 1);
+    },
+
+    prevMonthKey: function (key) {
+      var parts = String(key).split('-');
+      var y = parseInt(parts[0], 10);
+      var m = parseInt(parts[1], 10);
+      return m === 1 ? (y - 1) + '-12' : y + '-' + Core.pad(m - 1);
+    },
+
+    sortedMonths: function (state) {
+      return Object.keys(state.months).sort();
+    },
+
+    sumIncomes: function (month) {
+      var list = (month && month.incomes) || [];
+      var total = 0;
+      for (var i = 0; i < list.length; i++) total += Core.parseAmount(list[i].amount);
+      return total;
+    },
+
+    /** 이 달의 합계: 수입 / 지출 / 잔액 / 납부 완료 / 미납 */
+    totals: function (month) {
+      var income = Core.sumIncomes(month);
+      var expenses = (month && month.expenses) || [];
+      var expense = 0;
+      var paid = 0;
+      var paidCount = 0;
+      for (var i = 0; i < expenses.length; i++) {
+        var amount = Core.parseAmount(expenses[i].amount);
+        expense += amount;
+        if (expenses[i].paid) { paid += amount; paidCount += 1; }
+      }
+      return {
+        income: income,
+        expense: expense,
+        balance: income - expense,
+        paid: paid,
+        unpaid: expense - paid,
+        count: expenses.length,
+        paidCount: paidCount
+      };
+    },
+
+    /** 다른 달의 항목을 대상 달로 복사 (납부 표시는 초기화) */
+    copyInto: function (source, target, mode) {
+      var srcIn = (source && Array.isArray(source.incomes)) ? source.incomes : [];
+      var srcEx = (source && Array.isArray(source.expenses)) ? source.expenses : [];
+      var incomes = srcIn.map(function (x) {
+        return {
+          id: Core.uid(),
+          label: String(x && x.label != null ? x.label : ''),
+          amount: Core.parseAmount(x && x.amount)
+        };
+      });
+      var expenses = srcEx.map(function (x) {
+        return {
+          id: Core.uid(),
+          name: String(x && x.name != null ? x.name : ''),
+          amount: Core.parseAmount(x && x.amount),
+          paid: false
+        };
+      });
+      if (mode === 'append') {
+        var tIn = (target && Array.isArray(target.incomes)) ? target.incomes.slice() : [];
+        var tEx = (target && Array.isArray(target.expenses)) ? target.expenses.slice() : [];
+        return { incomes: tIn.concat(incomes), expenses: tEx.concat(expenses) };
+      }
+      return { incomes: incomes, expenses: expenses };
+    },
+
+    /** 2026년 12월 초기 데이터 (첨부된 엑셀 표 기준) */
+    seed: function () {
+      var key = '2026-12';
+      var rows = [
+        ['유플러스 모바일', 1216870, false],
+        ['유플러스 홈', 44110, false],
+        ['유모바일', 702600, false],
+        ['동생 유플러스', 127170, false],
+        ['골든캐피탈', 112000, true],
+        ['서민금융진흥원', 10332, false],
+        ['유노스프레스티지대...', 186000, true],
+        ['골든캐피탈', 160000, true]
+      ];
+      var months = {};
+      months[key] = {
+        title: Core.monthTitle(key),
+        incomes: [
+          { id: 'seed-salary', label: '급여', amount: 3230000 },
+          { id: 'seed-extra', label: '추가 수익', amount: 0 }
+        ],
+        expenses: rows.map(function (row, i) {
+          return { id: 'seed-exp-' + (i + 1), name: row[0], amount: row[1], paid: row[2] };
+        })
+      };
+      return { version: SCHEMA_VERSION, activeMonth: key, months: months };
+    },
+
+    /** 저장/가져온 데이터 검증·보정. 쓸 수 없으면 null */
+    normalize: function (raw) {
+      if (!raw || typeof raw !== 'object') return null;
+      var src = raw.months;
+      if (!src || typeof src !== 'object' || Array.isArray(src)) return null;
+      var months = {};
+      var keys = Object.keys(src);
+      for (var i = 0; i < keys.length; i++) {
+        var key = keys[i];
+        if (!Core.KEY_RE.test(key)) continue;
+        var m = src[key] || {};
+        var incomes = [];
+        var expenses = [];
+        if (Array.isArray(m.incomes)) {
+          m.incomes.forEach(function (x) {
+            if (!x || typeof x !== 'object') return;
+            incomes.push({
+              id: (typeof x.id === 'string' && x.id) ? x.id : Core.uid(),
+              label: String(x.label == null ? '' : x.label),
+              amount: Core.parseAmount(x.amount)
+            });
+          });
+        }
+        if (Array.isArray(m.expenses)) {
+          m.expenses.forEach(function (x) {
+            if (!x || typeof x !== 'object') return;
+            expenses.push({
+              id: (typeof x.id === 'string' && x.id) ? x.id : Core.uid(),
+              name: String(x.name == null ? '' : x.name),
+              amount: Core.parseAmount(x.amount),
+              paid: x.paid === true
+            });
+          });
+        }
+        months[key] = {
+          title: (typeof m.title === 'string' && m.title) ? m.title : Core.monthTitle(key),
+          incomes: incomes,
+          expenses: expenses
+        };
+      }
+      var monthKeys = Object.keys(months);
+      if (!monthKeys.length) return null;
+      var active = (typeof raw.activeMonth === 'string' && months[raw.activeMonth])
+        ? raw.activeMonth
+        : monthKeys.sort()[0];
+      return {
+        version: SCHEMA_VERSION,
+        activeMonth: active,
+        months: months,
+        updatedAt: (typeof raw.updatedAt === 'string') ? raw.updatedAt : null
+      };
+    },
+
+    /** 저장용 스냅샷 (내보내기 파일에도 같은 모양을 씁니다) */
+    snapshot: function (state) {
+      return {
+        app: 'salary-budget',
+        version: SCHEMA_VERSION,
+        activeMonth: state.activeMonth,
+        months: state.months,
+        updatedAt: new Date().toISOString()
+      };
+    }
+  };
+
+  /* =========================================================
+     3. 저장소 — Supabase RPC
+        앱은 오직 아래 두 함수만 씁니다.
+          await storage.load()  →  { data: 상태객체|null, raw: 원본문자열|null }
+          await storage.save(state)
+        DB(public 스키마)에는 아래 3개 함수가 있어야 합니다.
+          has_budget_pin()             → boolean
+          load_budget(p_pin text)      → { status:'empty'|'invalid_pin'|'ok', data? }
+          save_budget(p_pin, p_data)   → { status:'invalid_pin'|'ok' }
+        비밀번호는 함수 안에서만 검사되고, 테이블은 RLS로 잠겨 있어 직접 읽히지 않습니다.
+     ========================================================= */
+  function webStorageAvailable(store) {
+    try {
+      var k = '__salary_budget_test__';
+      store.setItem(k, '1');
+      store.removeItem(k);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /** RPC 응답을 {status, data}로 펴 줍니다. (jsonb·문자열·배열 모두 허용) */
+  function rpcResult(value) {
+    var v = value;
+    if (typeof v === 'string') {
+      try { v = JSON.parse(v); } catch (e) { v = null; }
+    }
+    if (Array.isArray(v)) v = v.length ? v[0] : null;
+    if (!v || typeof v !== 'object') return { status: 'unknown', data: null };
+    var status = (typeof v.status === 'string') ? v.status : 'unknown';
+    var data = (v.data !== undefined) ? v.data : v.state;
+    if (typeof data === 'string') {
+      try { data = JSON.parse(data); } catch (e) { data = null; }
+    }
+    return { status: status, data: (data === undefined ? null : data) };
+  }
+
+  function rpcBoolean(value) {
+    var v = value;
+    if (Array.isArray(v)) v = v.length ? v[0] : false;
+    if (v && typeof v === 'object') {
+      if ('has_budget_pin' in v) v = v.has_budget_pin;
+      else if ('has_pin' in v) v = v.has_pin;
+    }
+    return v === true || v === 'true' || v === 1;
+  }
+
+  var Cloud = {
+    client: null,
+    error: null,
+    init: function () {
+      if (Cloud.client) return Cloud.client;
+      if (!window.supabase || !window.supabase.createClient) {
+        Cloud.error = new Error('동기화 라이브러리를 불러오지 못했습니다.');
+        return null;
+      }
+      try {
+        Cloud.client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+          auth: { persistSession: false, autoRefreshToken: false }
+        });
+      } catch (e) {
+        Cloud.error = e;
+        Cloud.client = null;
+      }
+      return Cloud.client;
+    },
+    call: function (fn, args) {
+      var client = Cloud.init();
+      if (!client) return Promise.reject(Cloud.error || new Error('클라우드에 연결하지 못했습니다.'));
+      return Promise.resolve(client.rpc(fn, args || {})).then(function (res) {
+        if (!res) throw new Error('클라우드 응답이 없습니다.');
+        if (res.error) throw res.error;
+        return res.data;
+      });
+    },
+    hasPin: function () {
+      return Cloud.call('has_budget_pin').then(rpcBoolean);
+    },
+    load: function (pin) {
+      return Cloud.call('load_budget', { p_pin: pin }).then(rpcResult);
+    },
+    save: function (pin, data) {
+      return Cloud.call('save_budget', { p_pin: pin, p_data: data }).then(rpcResult);
+    }
+  };
+
+  function pinError() {
+    var err = new Error('비밀번호가 맞지 않습니다.');
+    err.pin = true;
+    return err;
+  }
+
+  /** 비밀번호를 아는 상태의 저장소 (기존 load/save 모양 그대로) */
+  function cloudStorage(pin) {
+    return {
+      kind: 'cloud',
+      load: function () {
+        return Cloud.load(pin).then(function (r) {
+          if (r.status === 'ok') return { data: r.data, raw: r.data ? JSON.stringify(r.data) : null };
+          if (r.status === 'empty') return { data: null, raw: null };
+          if (r.status === 'invalid_pin') throw pinError();
+          throw new Error('불러오기 응답을 확인할 수 없습니다(' + r.status + ')');
+        });
+      },
+      save: function (s) {
+        return Cloud.save(pin, Core.snapshot(s)).then(function (r) {
+          if (r.status === 'ok') return;
+          if (r.status === 'invalid_pin') throw pinError();
+          throw new Error('저장 응답을 확인할 수 없습니다(' + r.status + ')');
+        });
+      },
+      backup: function () {}
+    };
+  }
+
+  /** 이 기기에만 두는 4자리 비밀번호 (자동 잠금 해제용) */
+  var pinStore = {
+    available: function () {
+      try { return webStorageAvailable(window.localStorage); } catch (e) { return false; }
+    },
+    get: function () {
+      try { return window.localStorage.getItem(PIN_STORE_KEY) || ''; } catch (e) { return ''; }
+    },
+    set: function (pin) {
+      try { window.localStorage.setItem(PIN_STORE_KEY, pin); } catch (e) {}
+    },
+    clear: function () {
+      try { window.localStorage.removeItem(PIN_STORE_KEY); } catch (e) {}
+    },
+    keep: function () {
+      try { return window.localStorage.getItem(PIN_KEEP_KEY) === '1'; } catch (e) { return false; }
+    },
+    setKeep: function (on) {
+      try {
+        if (on) window.localStorage.setItem(PIN_KEEP_KEY, '1');
+        else window.localStorage.removeItem(PIN_KEEP_KEY);
+      } catch (e) {}
+    }
+  };
+
+  /* =========================================================
+     4. 상태
+     ========================================================= */
+  var state = null;
+  var storage = null;
+  var saveTimer = null;
+  var pending = false;
+  var toastTimer = null;
+  var bound = false;
+  var saveChain = Promise.resolve();
+  var saveFails = 0;
+
+  function $(id) {
+    return document.getElementById(id);
+  }
+
+  function currentMonth() {
+    return state.months[state.activeMonth];
+  }
+
+  function fmt(n) {
+    return Core.format(n);
+  }
+
+  function won(n) {
+    return Core.format(n) + '원';
+  }
+
+  /* =========================================================
+     5. 저장 (입력 후 0.35초 뒤 자동 저장)
+     ========================================================= */
+  function timeText(d) {
+    try {
+      return d.toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' });
+    } catch (e) {
+      return '';
+    }
+  }
+
+  function setStatus(text, kind) {
+    var statusEl = $('saveStatus');
+    var dotEl = $('saveDot');
+    if (statusEl) statusEl.textContent = text;
+    if (dotEl) dotEl.className = 'dot' + (kind ? ' ' + kind : '');
+  }
+
+  function saveStatusText() {
+    return '클라우드에 저장됨 · ' + timeText(new Date());
+  }
+
+  function scheduleSave(delay) {
+    if (!state || !storage) return;
+    pending = true;
+    setStatus('저장 중…', 'saving');
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(function () { flushSave(); }, typeof delay === 'number' ? delay : SAVE_DELAY);
+  }
+
+  function flushSave() {
+    if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+    if (!pending || !state || !storage) return;
+    pending = false;
+    var snapshotState = state;
+    setStatus('저장 중…', 'saving');
+    saveChain = saveChain.then(function () {
+      return storage.save(snapshotState);
+    }).then(function () {
+      saveFails = 0;
+      setStatus(saveStatusText(), 'saved');
+    }).catch(function (err) {
+      if (window.console) console.error(err);
+      if (err && err.pin) {
+        pending = false;
+        setStatus('비밀번호가 맞지 않아 저장하지 못했습니다', 'error');
+        lockNow({ desc: '비밀번호가 바뀐 것 같습니다. 다시 입력해 주세요.' });
+        return;
+      }
+      pending = true;
+      setStatus('저장하지 못했습니다', 'error');
+      saveFails += 1;
+      if (saveFails <= 3) {
+        showToast('클라우드에 저장하지 못했습니다. 잠시 뒤 다시 시도합니다.');
+        if (saveTimer) clearTimeout(saveTimer);
+        saveTimer = setTimeout(function () { saveTimer = null; flushSave(); }, 4000);
+      } else {
+        showToast('클라우드에 저장하지 못했습니다. 연결을 확인해 주세요.');
+      }
+    });
+  }
+
+  /* =========================================================
+     6. 화면 그리기
+     ========================================================= */
+  function render() {
+    var key = state.activeMonth;
+    var month = state.months[key];
+    if (!month) return;
+
+    document.title = Core.monthTitle(key) + ' · ' + Core.monthLabel(key);
+    $('pageTitle').textContent = Core.monthTitle(key);
+    $('pageSub').textContent = Core.monthLabel(key) + ' · 지출 ' + month.expenses.length + '건';
+
+    renderMonthSelect();
+    renderIncomeList();
+    renderExpenseList();
+    renderTotals();
+  }
+
+  function renderMonthSelect() {
+    var select = $('monthSelect');
+    var keys = Core.sortedMonths(state);
+    select.replaceChildren();
+    keys.forEach(function (k) {
+      var opt = document.createElement('option');
+      opt.value = k;
+      opt.textContent = Core.monthLabel(k);
+      select.appendChild(opt);
+    });
+    select.value = state.activeMonth;
+
+    var idx = keys.indexOf(state.activeMonth);
+    $('prevMonth').disabled = idx <= 0;
+    $('nextMonth').disabled = idx < 0 || idx >= keys.length - 1;
+  }
+
+  function renderIncomeList() {
+    var month = currentMonth();
+    var list = $('incomeList');
+    list.replaceChildren();
+
+    if (!month.incomes.length) {
+      var empty = document.createElement('li');
+      empty.className = 'empty';
+      empty.textContent = '수입 항목이 없습니다. 아래에서 추가해 보세요.';
+      list.appendChild(empty);
+    } else {
+      month.incomes.forEach(function (item) {
+        list.appendChild(incomeRow(item));
+      });
+    }
+    $('incomeCount').textContent = month.incomes.length + '건';
+  }
+
+  function renderExpenseList() {
+    var month = currentMonth();
+    var list = $('expenseList');
+    list.replaceChildren();
+
+    if (!month.expenses.length) {
+      var empty = document.createElement('li');
+      empty.className = 'empty';
+      empty.textContent = '지출 항목이 없습니다. 아래에서 추가해 보세요.';
+      list.appendChild(empty);
+    } else {
+      month.expenses.forEach(function (item) {
+        list.appendChild(expenseRow(item));
+      });
+    }
+    $('expenseCount').textContent = month.expenses.length + '건';
+  }
+
+  function renderTotals() {
+    var month = currentMonth();
+    if (!month) return;
+    var t = Core.totals(month);
+
+    $('sumIncome').textContent = won(t.income);
+    $('sumExpense').textContent = won(t.expense);
+    $('sumBalance').textContent = fmt(t.balance);
+    var bal = $('sumBalance').parentNode;
+    if (bal) bal.classList.toggle('negative', t.balance < 0);
+
+    $('incomeTotal').textContent = won(t.income);
+    $('expenseTotal').textContent = won(t.expense);
+    $('incomeCount').textContent = month.incomes.length + '건';
+    $('expenseCount').textContent = t.count + '건';
+    $('pageSub').textContent = Core.monthLabel(state.activeMonth) + ' · 지출 ' + t.count + '건';
+
+    var ratio = t.expense > 0 ? (t.paid / t.expense) * 100 : 0;
+    var bar = $('paidBar');
+    bar.style.width = Math.max(0, Math.min(100, ratio)) + '%';
+    bar.style.opacity = ratio > 0 ? '1' : '0';
+    bar.style.transition = 'width .28s ease, opacity .2s ease';
+
+    $('sumPaid').textContent = won(t.paid) + ' (' + t.paidCount + '/' + t.count + ')';
+    $('sumUnpaid').textContent = won(t.unpaid);
+  }
+
+  function textInput(type, value, placeholder, ariaLabel) {
+    var input = document.createElement('input');
+    input.type = type;
+    input.value = value == null ? '' : value;
+    input.placeholder = placeholder || '';
+    input.autocomplete = 'off';
+    if (ariaLabel) input.setAttribute('aria-label', ariaLabel);
+    return input;
+  }
+
+  function amountInput(item, ariaLabel) {
+    var input = textInput('text', Core.format(item.amount), '0', ariaLabel);
+    input.className = 'amount';
+    input.inputMode = 'numeric';
+    input.spellcheck = false;
+
+    input.addEventListener('focus', function () {
+      input.value = item.amount ? String(item.amount) : '';
+      var len = input.value.length;
+      try { input.setSelectionRange(len, len); } catch (e) {}
+    });
+    input.addEventListener('input', function () {
+      var digits = input.value.replace(/[^0-9]/g, '').slice(0, 12);
+      if (input.value !== digits) input.value = digits;
+      item.amount = Core.parseAmount(digits);
+      renderTotals();
+      scheduleSave();
+    });
+    input.addEventListener('blur', function () {
+      input.value = Core.format(item.amount);
+    });
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+    });
+    return input;
+  }
+
+  function deleteButton(kind, item) {
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'del';
+    btn.textContent = '×';
+    btn.title = '삭제';
+    btn.setAttribute('aria-label', '이 항목 삭제');
+    btn.addEventListener('click', function () { removeItem(kind, item.id); });
+    return btn;
+  }
+
+  function incomeRow(item) {
+    var li = document.createElement('li');
+    li.className = 'row income';
+    li.dataset.id = item.id;
+
+    var name = textInput('text', item.label, '수입 항목', '수입 항목명');
+    name.className = 'name';
+    name.addEventListener('input', function () {
+      item.label = name.value;
+      scheduleSave();
+    });
+
+    var amount = amountInput(item, '수입 금액');
+    li.appendChild(name);
+    li.appendChild(amount);
+    li.appendChild(deleteButton('incomes', item));
+    return li;
+  }
+
+  function expenseRow(item) {
+    var li = document.createElement('li');
+    li.className = 'row expense' + (item.paid ? ' is-paid' : '');
+    li.dataset.id = item.id;
+
+    var check = document.createElement('button');
+    check.type = 'button';
+    check.className = 'check';
+    check.setAttribute('role', 'checkbox');
+    check.setAttribute('aria-checked', item.paid ? 'true' : 'false');
+    check.textContent = 'ㅇ';
+    function syncCheck() {
+      check.title = item.paid ? '미납으로 되돌리기' : '납부 완료로 표시';
+      check.setAttribute('aria-label', (item.name || '이름 없음') + ' 납부 완료');
+    }
+    syncCheck();
+    check.addEventListener('click', function () {
+      item.paid = !item.paid;
+      li.classList.toggle('is-paid', item.paid);
+      check.setAttribute('aria-checked', item.paid ? 'true' : 'false');
+      syncCheck();
+      renderTotals();
+      scheduleSave();
+    });
+
+    var name = textInput('text', item.name, '항목명', '지출 항목명');
+    name.className = 'name';
+    name.addEventListener('input', function () {
+      item.name = name.value;
+      syncCheck();
+      scheduleSave();
+    });
+
+    var amount = amountInput(item, '지출 금액');
+    li.appendChild(check);
+    li.appendChild(name);
+    li.appendChild(amount);
+    li.appendChild(deleteButton('expenses', item));
+    return li;
+  }
+
+  /* =========================================================
+     7. 편집 동작
+     ========================================================= */
+  function addExpense() {
+    var month = currentMonth();
+    var item = { id: Core.uid(), name: '', amount: 0, paid: false };
+    month.expenses.push(item);
+    renderExpenseList();
+    renderTotals();
+    scheduleSave();
+    focusNewRow('expense', item.id, 'name');
+  }
+
+  function addIncome() {
+    var month = currentMonth();
+    var item = { id: Core.uid(), label: '', amount: 0 };
+    month.incomes.push(item);
+    renderIncomeList();
+    renderTotals();
+    scheduleSave();
+    focusNewRow('income', item.id, 'name');
+  }
+
+  function focusNewRow(kind, id, field) {
+    var selector = '.row.' + kind + '[data-id="' + id + '"] input.' + field;
+    var input = document.querySelector(selector);
+    if (!input) return;
+    try { input.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (e) {}
+    input.focus();
+  }
+
+  function removeItem(kind, id) {
+    var monthKey = state.activeMonth;
+    var month = state.months[monthKey];
+    if (!month) return;
+    var list = kind === 'expenses' ? month.expenses : month.incomes;
+    var idx = -1;
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].id === id) { idx = i; break; }
+    }
+    if (idx < 0) return;
+
+    var removed = list.splice(idx, 1)[0];
+    render();
+    scheduleSave();
+
+    var label = removed.name || removed.label || '항목';
+    showToast('‘' + label + '’ 삭제했습니다.', '실행 취소', function () {
+      var target = state.months[monthKey];
+      if (!target) return;
+      var arr = kind === 'expenses' ? target.expenses : target.incomes;
+      if (arr.some(function (x) { return x.id === removed.id; })) return;
+      arr.splice(Math.min(idx, arr.length), 0, removed);
+      if (state.activeMonth === monthKey) render();
+      scheduleSave();
+    });
+  }
+
+  function setActiveMonth(key) {
+    if (!state.months[key]) return;
+    state.activeMonth = key;
+    render();
+    scheduleSave();
+  }
+
+  function stepMonth(direction) {
+    var keys = Core.sortedMonths(state);
+    var idx = keys.indexOf(state.activeMonth);
+    var next = idx + direction;
+    if (next >= 0 && next < keys.length) setActiveMonth(keys[next]);
+  }
+
+  /* =========================================================
+     8. 다이얼로그 · 토스트
+     ========================================================= */
+  var dialogConfirm = null;
+
+  function makeSelect(options, value) {
+    var select = document.createElement('select');
+    options.forEach(function (pair) {
+      var opt = document.createElement('option');
+      opt.value = pair[0];
+      opt.textContent = pair[1];
+      select.appendChild(opt);
+    });
+    select.value = value;
+    return select;
+  }
+
+  function field(labelText, control) {
+    var wrap = document.createElement('div');
+    wrap.className = 'field';
+    if (labelText) {
+      var label = document.createElement('span');
+      label.className = 'f-label';
+      label.textContent = labelText;
+      wrap.appendChild(label);
+    }
+    wrap.appendChild(control);
+    return wrap;
+  }
+
+  function radioGroup(name, options, value) {
+    var wrap = document.createElement('div');
+    wrap.className = 'radio-group';
+    options.forEach(function (pair) {
+      var label = document.createElement('label');
+      label.className = 'radio';
+      var input = document.createElement('input');
+      input.type = 'radio';
+      input.name = name;
+      input.value = pair[0];
+      input.checked = pair[0] === value;
+      var span = document.createElement('span');
+      span.textContent = pair[1];
+      label.appendChild(input);
+      label.appendChild(span);
+      wrap.appendChild(label);
+    });
+    wrap.getValue = function () {
+      var checked = wrap.querySelector('input:checked');
+      return checked ? checked.value : value;
+    };
+    return wrap;
+  }
+
+  function checkboxField(text, checked) {
+    var wrap = document.createElement('label');
+    wrap.className = 'check-field';
+    var input = document.createElement('input');
+    input.type = 'checkbox';
+    input.checked = !!checked;
+    var span = document.createElement('span');
+    span.textContent = text;
+    wrap.appendChild(input);
+    wrap.appendChild(span);
+    wrap.input = input;
+    return wrap;
+  }
+
+  function openDialog(opts) {
+    var dialog = $('dialog');
+    $('dlgTitle').textContent = opts.title || '';
+    var desc = $('dlgDesc');
+    desc.textContent = opts.desc || '';
+    desc.hidden = !opts.desc;
+
+    var body = $('dlgBody');
+    body.replaceChildren();
+    if (opts.build) opts.build(body);
+
+    var ok = $('dlgOk');
+    ok.textContent = opts.confirmLabel || '확인';
+    ok.className = 'btn ' + (opts.kind === 'danger' ? 'danger-solid' : 'primary');
+
+    var cancel = $('dlgCancel');
+    cancel.hidden = !!opts.hideCancel;
+    cancel.textContent = opts.cancelLabel || '취소';
+
+    dialogConfirm = opts.onConfirm || null;
+    if (!dialog.open) dialog.showModal();
+  }
+
+  function showToast(message, actionLabel, action) {
+    var toast = $('toast');
+    $('toastMsg').textContent = message;
+    var btn = $('toastAction');
+    if (actionLabel) {
+      btn.hidden = false;
+      btn.textContent = actionLabel;
+      btn.onclick = function () {
+        hideToast();
+        if (action) action();
+      };
+    } else {
+      btn.hidden = true;
+      btn.onclick = null;
+    }
+    toast.classList.add('show');
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(hideToast, actionLabel ? 6000 : 3200);
+  }
+
+  function hideToast() {
+    var toast = $('toast');
+    if (toast) toast.classList.remove('show');
+    if (toastTimer) { clearTimeout(toastTimer); toastTimer = null; }
+  }
+
+  /* =========================================================
+     9. 달 관리
+     ========================================================= */
+  function openNewMonthDialog() {
+    var keys = Core.sortedMonths(state);
+    var base = Core.nextMonthKey(state.activeMonth);
+    var last = keys[keys.length - 1];
+    if (last && base <= last) base = Core.nextMonthKey(last);
+
+    var parts = base.split('-');
+    var baseYear = parseInt(parts[0], 10);
+    var baseMonth = parseInt(parts[1], 10);
+    var thisYear = new Date().getFullYear();
+    var from = Math.min(baseYear, thisYear) - 1;
+    var to = Math.max(baseYear, thisYear) + 2;
+
+    var yearOptions = [];
+    for (var y = from; y <= to; y++) yearOptions.push([String(y), y + '년']);
+    var yearSel = makeSelect(yearOptions, String(baseYear));
+    yearSel.className = 'txt';
+
+    var monthOptions = [];
+    for (var i = 1; i <= 12; i++) monthOptions.push([Core.pad(i), i + '월']);
+    var monthSel = makeSelect(monthOptions, Core.pad(baseMonth));
+    monthSel.className = 'txt';
+
+    var canCopy = !!state.months[Core.prevMonthKey(base)];
+    var copyField = checkboxField('직전 달의 수입·지출 항목 복사 (납부 표시는 초기화)', canCopy);
+    copyField.input.disabled = !canCopy;
+
+    var pickRow = document.createElement('div');
+    pickRow.className = 'pick-row';
+    pickRow.appendChild(field('연도', yearSel));
+    pickRow.appendChild(field('월', monthSel));
+
+    openDialog({
+      title: '새 달 만들기',
+      desc: '만들 달을 고르세요. 이미 있는 달을 고르면 그 달로 이동합니다.',
+      confirmLabel: '만들기',
+      build: function (body) {
+        body.appendChild(pickRow);
+        body.appendChild(copyField);
+      },
+      onConfirm: function () {
+        var key = yearSel.value + '-' + Core.pad(monthSel.value);
+        if (!Core.KEY_RE.test(key)) return false;
+
+        if (state.months[key]) {
+          setActiveMonth(key);
+          showToast(Core.monthLabel(key) + '로 이동했습니다.');
+          return true;
+        }
+
+        var month = {
+          title: Core.monthTitle(key),
+          incomes: [{ id: Core.uid(), label: '급여', amount: 0 }],
+          expenses: []
+        };
+        var copied = false;
+        if (copyField.input.checked) {
+          var src = state.months[Core.prevMonthKey(key)];
+          if (src) {
+            var result = Core.copyInto(src, null, 'replace');
+            month.incomes = result.incomes;
+            month.expenses = result.expenses;
+            copied = true;
+          }
+        }
+        state.months[key] = month;
+        setActiveMonth(key);
+        showToast(Core.monthLabel(key) + '을 만들었습니다.' + (copied ? ' 직전 달 항목을 함께 복사했어요.' : ''));
+        return true;
+      }
+    });
+  }
+
+  function openCopyDialog() {
+    var keys = Core.sortedMonths(state).filter(function (k) { return k !== state.activeMonth; });
+    if (!keys.length) {
+      showToast('불러올 다른 달이 없습니다. 먼저 새 달을 만들어 주세요.');
+      return;
+    }
+    var def = Core.prevMonthKey(state.activeMonth);
+    if (!state.months[def]) {
+      var earlier = keys.filter(function (k) { return k < state.activeMonth; });
+      def = earlier.length ? earlier[earlier.length - 1] : keys[0];
+    }
+    var srcSel = makeSelect(keys.map(function (k) { return [k, Core.monthLabel(k)]; }), def);
+    srcSel.className = 'txt';
+    var mode = radioGroup('copyMode', [
+      ['append', '현재 항목 뒤에 추가'],
+      ['replace', '현재 항목을 지우고 교체']
+    ], 'append');
+
+    openDialog({
+      title: '항목 불러오기',
+      desc: '선택한 달의 수입·지출 항목을 ' + Core.monthLabel(state.activeMonth) + '로 복사합니다. 납부 완료 표시는 초기화됩니다.',
+      confirmLabel: '불러오기',
+      build: function (body) {
+        body.appendChild(field('불러올 달', srcSel));
+        var label = document.createElement('span');
+        label.className = 'f-label';
+        label.textContent = '방식';
+        body.appendChild(label);
+        body.appendChild(mode);
+      },
+      onConfirm: function () {
+        var src = state.months[srcSel.value];
+        if (!src) return false;
+        var current = currentMonth();
+        var result = Core.copyInto(src, current, mode.getValue());
+        current.incomes = result.incomes;
+        current.expenses = result.expenses;
+        render();
+        scheduleSave();
+        showToast(Core.monthLabel(srcSel.value) + ' 항목을 불러왔습니다.');
+        return true;
+      }
+    });
+  }
+
+  function openDeleteMonthDialog() {
+    var keys = Core.sortedMonths(state);
+    if (keys.length <= 1) {
+      showToast('마지막 남은 달은 삭제할 수 없습니다.');
+      return;
+    }
+    var key = state.activeMonth;
+
+    openDialog({
+      title: Core.monthLabel(key) + ' 삭제',
+      desc: '이 달의 수입·지출 항목이 모두 사라집니다. 다른 달 데이터는 그대로 남습니다.',
+      confirmLabel: '삭제',
+      kind: 'danger',
+      onConfirm: function () {
+        var removed = state.months[key];
+        delete state.months[key];
+        var remain = Core.sortedMonths(state);
+        state.activeMonth = remain[remain.length - 1];
+        render();
+        scheduleSave();
+        showToast(Core.monthLabel(key) + '을 삭제했습니다.', '실행 취소', function () {
+          state.months[key] = removed;
+          state.activeMonth = key;
+          render();
+          scheduleSave();
+        });
+        return true;
+      }
+    });
+  }
+
+  /* =========================================================
+     10. 내보내기 / 가져오기
+     ========================================================= */
+  function exportJson() {
+    var payload = Core.snapshot(state);
+    var text = JSON.stringify(payload, null, 2);
+    var blob = new Blob([text], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var now = new Date();
+    var stamp = now.getFullYear() + '-' + Core.pad(now.getMonth() + 1) + '-' + Core.pad(now.getDate());
+    var link = document.createElement('a');
+    link.href = url;
+    link.download = '급여예산-' + state.activeMonth + '-' + stamp + '.json';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1500);
+    showToast('JSON 파일로 내보냈습니다.');
+  }
+
+  function importFile(file) {
+    var reader = new FileReader();
+    reader.onload = function () {
+      var data = null;
+      try {
+        data = JSON.parse(String(reader.result));
+      } catch (e) {
+        showToast('JSON 파일을 읽지 못했습니다. 형식을 확인해 주세요.');
+        return;
+      }
+      var normalized = Core.normalize(data);
+      if (!normalized) {
+        showToast('이 파일에서는 예산 데이터를 찾지 못했습니다.');
+        return;
+      }
+      var count = Object.keys(normalized.months).length;
+      openDialog({
+        title: '데이터 가져오기',
+        desc: (file.name || '선택한 파일') + ' · ' + count + '개월\n지금 저장된 데이터를 모두 대체합니다.',
+        confirmLabel: '가져오기',
+        kind: 'danger',
+        onConfirm: function () {
+          state = normalized;
+          render();
+          scheduleSave(0);
+          showToast(count + '개월 데이터를 가져왔습니다.');
+          return true;
+        }
+      });
+    };
+    reader.onerror = function () {
+      showToast('파일을 읽지 못했습니다.');
+    };
+    reader.readAsText(file);
+  }
+
+  /* =========================================================
+     11. 도움말
+     ========================================================= */
+  function openHelpDialog() {
+    var lines = [
+      ['고치기', '항목 이름과 금액을 눌러 바로 수정할 수 있습니다. 금액은 숫자만 입력하면 천 단위 쉼표가 자동으로 붙습니다.'],
+      ['납부 완료', '왼쪽 ㅇ를 누르면 납부 완료로 표시되고 줄이 흐려집니다. 다시 누르면 미납으로 돌아갑니다.'],
+      ['달 관리', '위쪽 화살표나 달 이름으로 다른 달을 봅니다. ‘새 달 만들기’로 다음 달을 만들고, ‘전월 항목 불러오기’로 매달 반복되는 고정 지출을 그대로 가져올 수 있습니다.'],
+      ['저장', '바꾸는 즉시 클라우드(Supabase)에 자동 저장됩니다. 4자리 비밀번호를 아는 기기에서는 어디서든 같은 예산이 열립니다.'],
+      ['잠금', '오른쪽 위 🔒를 누르면 바로 잠깁니다. 잠금 화면에서 ‘이 기기에서 잠금 유지’를 켜 두면 다음부터는 번호 없이 열립니다.'],
+      ['다른 기기', '같은 주소를 열고 4자리 번호만 입력하면 됩니다. 기기 두 곳에서 동시에 고치면 마지막에 저장된 쪽이 남습니다.'],
+      ['백업', '혹시 모를 경우를 위해 JSON 내보내기로 파일을 받아 두면 좋습니다. 비밀번호를 잊으면 열 수 없으니 주의하세요.']
+    ];
+    openDialog({
+      title: '사용 방법',
+      desc: '필요한 것만 짧게 정리했습니다.',
+      confirmLabel: '닫기',
+      hideCancel: true,
+      build: function (body) {
+        lines.forEach(function (pair) {
+          var p = document.createElement('p');
+          p.className = 'help-line';
+          var b = document.createElement('b');
+          b.textContent = pair[0] + ' · ';
+          p.appendChild(b);
+          p.appendChild(document.createTextNode(pair[1]));
+          body.appendChild(p);
+        });
+      }
+    });
+  }
+
+  /* =========================================================
+     11-B. 잠금 화면 (4자리 숫자 비밀번호)
+     ========================================================= */
+  var Lock = {
+    stage: '',
+    buf: '',
+    first: '',
+    busy: false,
+    peek: false,
+    savedPin: '',
+    pin: ''
+  };
+
+  var LOCK_TEXT = {
+    checking: { icon: '🔒', title: '불러오는 중…', desc: '클라우드에서 예산을 확인하고 있습니다.' },
+    setup: {
+      icon: '🔑',
+      title: '사용할 4자리 숫자 비밀번호를 설정하세요',
+      desc: '이 번호로 어느 기기에서나 같은 예산을 엽니다. 숫자 4자리면 됩니다.'
+    },
+    confirm: {
+      icon: '🔑',
+      title: '확인을 위해 한 번 더 입력하세요',
+      desc: '방금 정한 번호를 한 번 더 입력해 주세요.'
+    },
+    unlock: {
+      icon: '🔒',
+      title: '4자리 숫자 비밀번호를 입력하세요',
+      desc: '이 비밀번호로 저장된 예산을 엽니다.'
+    },
+    error: {
+      icon: '⚠️',
+      title: '클라우드에 연결하지 못했습니다',
+      desc: '잠시 뒤 다시 시도해 주세요.'
+    }
+  };
+
+  function lockCells() {
+    return Array.prototype.slice.call(document.querySelectorAll('#pinWrap .pin-cell'));
+  }
+
+  function paintCells() {
+    var cells = lockCells();
+    for (var i = 0; i < cells.length; i++) {
+      var cell = cells[i];
+      var filled = i < Lock.buf.length;
+      cell.className = 'pin-cell' + (filled ? ' on' : '');
+      cell.textContent = '';
+      if (filled) {
+        if (Lock.peek) cell.textContent = Lock.buf.charAt(i);
+        else cell.classList.add('dot');
+      }
+    }
+  }
+
+  function updatePinOk() {
+    var ok = $('pinOk');
+    if (!ok) return;
+    ok.disabled = !!(Lock.busy || Lock.buf.length !== 4);
+  }
+
+  function setLockBusy(text) {
+    var wrap = $('lockBusy');
+    var label = $('lockBusyText');
+    if (!wrap || !label) return;
+    if (!text) {
+      wrap.hidden = true;
+      label.textContent = '';
+      return;
+    }
+    wrap.hidden = false;
+    label.textContent = text;
+  }
+
+  function shakePin() {
+    var wrap = $('pinWrap');
+    if (!wrap) return;
+    wrap.classList.remove('shake');
+    void wrap.offsetWidth;
+    wrap.classList.add('shake');
+    setTimeout(function () { wrap.classList.remove('shake'); }, 480);
+    try { if (navigator.vibrate) navigator.vibrate(50); } catch (e) {}
+  }
+
+  function showLockStage(stage, opts) {
+    opts = opts || {};
+    var text = LOCK_TEXT[stage] || LOCK_TEXT.unlock;
+    Lock.stage = stage;
+    Lock.busy = false;
+    document.body.classList.add('locked');
+
+    $('lockIcon').textContent = text.icon;
+    $('lockTitle').textContent = opts.title || text.title;
+    var desc = $('lockDesc');
+    desc.textContent = opts.desc || text.desc;
+    desc.classList.toggle('err', !!opts.error);
+
+    var pinVisible = (stage === 'setup' || stage === 'confirm' || stage === 'unlock');
+    $('pinStage').hidden = !pinVisible;
+    $('lockErrorActions').hidden = (stage !== 'error');
+    $('lockFoot').hidden = (stage === 'checking' || stage === 'error');
+    $('lockDetail').hidden = !opts.detail;
+    $('lockDetail').textContent = opts.detail || '';
+    setLockBusy(stage === 'checking' ? '연결 중' : '');
+
+    if (!pinVisible) return;
+
+    if (stage === 'setup' || stage === 'unlock') Lock.first = '';
+    Lock.buf = '';
+    var input = $('pinInput');
+    input.value = '';
+    input.type = Lock.peek ? 'text' : 'password';
+    $('pinPeek').textContent = Lock.peek ? '가리기' : '보기';
+    $('pinKeep').checked = Lock.savedPin ? true : pinStore.keep();
+    $('pinClearPin').hidden = !Lock.savedPin;
+    $('pinOk').textContent = (stage === 'setup') ? '다음' : (stage === 'confirm' ? '설정하고 시작' : '열기');
+    paintCells();
+    updatePinOk();
+    setTimeout(function () {
+      try { input.focus({ preventScroll: true }); } catch (e) { try { input.focus(); } catch (e2) {} }
+    }, 80);
+  }
+
+  function onPinInput() {
+    var input = $('pinInput');
+    var digits = String(input.value || '').replace(/[^0-9]/g, '').slice(0, 4);
+    if (input.value !== digits) input.value = digits;
+    Lock.buf = digits;
+    paintCells();
+    updatePinOk();
+    if (digits.length === 4 && (Lock.stage === 'unlock' || Lock.stage === 'confirm')) {
+      setTimeout(submitPin, 140);
+    }
+  }
+
+  function submitPin() {
+    if (Lock.busy) return;
+    if (Lock.buf.length !== 4) { shakePin(); return; }
+    if (Lock.stage === 'setup') {
+      Lock.first = Lock.buf;
+      showLockStage('confirm');
+      return;
+    }
+    if (Lock.stage === 'confirm') {
+      if (Lock.buf !== Lock.first) {
+        shakePin();
+        showLockStage('setup', { desc: '두 번 입력한 번호가 달라 처음부터 다시 설정합니다.', error: true });
+        return;
+      }
+      createPin(Lock.buf);
+      return;
+    }
+    if (Lock.stage === 'unlock') attemptUnlock(Lock.buf, false);
+  }
+
+  /** 최초 설정: 고른 번호로 기본 데이터를 저장하면서 PIN을 함께 등록합니다. */
+  function createPin(pin) {
+    Lock.busy = true;
+    updatePinOk();
+    setLockBusy('설정하는 중');
+    var seed = Core.seed();
+    Cloud.save(pin, Core.snapshot(seed)).then(function (r) {
+      if (r.status === 'ok') {
+        enterApp(pin, seed, true);
+        return;
+      }
+      if (r.status === 'invalid_pin') {
+        Lock.busy = false;
+        setLockBusy('');
+        showLockStage('unlock', { desc: '이미 설정된 비밀번호가 있습니다. 기존 4자리 번호를 입력해 주세요.' });
+        return;
+      }
+      throw new Error('설정 응답을 확인할 수 없습니다(' + r.status + ')');
+    }).catch(function (err) {
+      Lock.busy = false;
+      setLockBusy('');
+      lockError(err);
+    });
+  }
+
+  function checkHasPin(opts) {
+    opts = opts || {};
+    if (Lock.stage !== 'checking') showLockStage('checking');
+    if (opts.desc) $('lockDesc').textContent = opts.desc;
+    Cloud.hasPin().then(function (has) {
+      var next = has ? 'unlock' : 'setup';
+      showLockStage(next, opts.desc ? { desc: opts.desc } : undefined);
+    }).catch(function (err) {
+      lockError(err);
+    });
+  }
+
+  function attemptUnlock(pin, auto) {
+    Lock.busy = true;
+    updatePinOk();
+    setLockBusy(auto ? '저장된 번호로 여는 중' : '여는 중');
+    Cloud.load(pin).then(function (r) {
+      if (r.status === 'invalid_pin') {
+        Lock.busy = false;
+        setLockBusy('');
+        if (auto) {
+          pinStore.clear();
+          pinStore.setKeep(false);
+          Lock.savedPin = '';
+          checkHasPin({ desc: '이 기기에 저장된 번호가 맞지 않아 지웠습니다. 다시 입력해 주세요.' });
+          return;
+        }
+        Lock.buf = '';
+        $('pinInput').value = '';
+        paintCells();
+        updatePinOk();
+        shakePin();
+        var desc = $('lockDesc');
+        desc.classList.add('err');
+        desc.textContent = '비밀번호가 맞지 않습니다. 다시 입력해 주세요.';
+        setTimeout(function () { try { $('pinInput').focus({ preventScroll: true }); } catch (e) {} }, 60);
+        return;
+      }
+      if (r.status === 'empty' || (r.status === 'ok' && !r.data)) {
+        enterApp(pin, null, true);
+        return;
+      }
+      if (r.status !== 'ok') throw new Error('불러오기 응답을 확인할 수 없습니다(' + r.status + ')');
+      var normalized = Core.normalize(r.data);
+      if (!normalized) {
+        var bad = new Error('저장된 데이터를 읽지 못했습니다.');
+        bad.badData = true;
+        throw bad;
+      }
+      enterApp(pin, normalized, false);
+    }).catch(function (err) {
+      Lock.busy = false;
+      setLockBusy('');
+      lockError(err);
+    });
+  }
+
+  function enterApp(pin, data, isNew) {
+    Lock.pin = pin;
+    Lock.stage = '';
+    Lock.buf = '';
+    Lock.first = '';
+    Lock.busy = false;
+    setLockBusy('');
+    storage = cloudStorage(pin);
+
+    var keep = $('pinKeep') ? $('pinKeep').checked : false;
+    if (keep && pinStore.available()) {
+      pinStore.set(pin);
+      pinStore.setKeep(true);
+      Lock.savedPin = pin;
+    } else {
+      pinStore.clear();
+      pinStore.setKeep(false);
+      Lock.savedPin = '';
+      if (keep) showToast('이 브라우저에서는 이 기기 저장을 쓸 수 없습니다.');
+    }
+
+    state = data || Core.seed();
+    if (!bound) { bind(); bound = true; }
+    document.body.classList.remove('locked');
+    render();
+    if (isNew) {
+      setStatus('새 예산을 만들었습니다', 'saved');
+      scheduleSave(0);
+    } else {
+      setStatus(saveStatusText(), 'saved');
+    }
+    try { $('pinInput').blur(); } catch (e) {}
+  }
+
+  /** 화면에서 예산 내용을 지우고 잠급니다. (저장 중인 변경은 먼저 저장) */
+  function clearContent() {
+    ['incomeList', 'expenseList'].forEach(function (id) {
+      var el = $(id);
+      if (el) el.replaceChildren();
+    });
+    ['sumIncome', 'sumExpense', 'sumBalance', 'sumPaid', 'sumUnpaid',
+      'incomeTotal', 'expenseTotal', 'incomeCount', 'expenseCount', 'pageSub'].forEach(function (id) {
+      var el = $(id);
+      if (el) el.textContent = '';
+    });
+    $('pageTitle').textContent = '급여 예산';
+    document.title = '급여 예산';
+  }
+
+  function lockNow(opts) {
+    opts = opts || {};
+    if (Lock.stage === 'unlock' || Lock.stage === 'setup' || Lock.stage === 'confirm') return;
+    if (pending && storage) flushSave();
+    saveChain.catch(function () {}).then(function () {
+      state = null;
+      storage = null;
+      pending = false;
+      if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+      clearContent();
+      Lock.savedPin = pinStore.get();
+      Lock.pin = '';
+      document.body.classList.add('locked');
+      showLockStage('unlock', { desc: opts.desc || '' });
+    });
+  }
+
+  function lockError(err) {
+    if (window.console) console.error(err);
+    Lock.busy = false;
+    setLockBusy('');
+    var text = String((err && (err.message || err.error_description || err.hint || err.details)) || err || '');
+    var code = String((err && err.code) || '');
+    var all = text + ' ' + code;
+    var info = { title: '클라우드에 연결하지 못했습니다', desc: '잠시 뒤 다시 시도해 주세요.', detail: text || code };
+    if (err && err.badData) {
+      info = {
+        title: '저장된 데이터를 읽지 못했습니다',
+        desc: '데이터 형식이 예상과 달라 열지 않았습니다. 저장된 내용은 덮어쓰지 않았습니다.',
+        detail: text
+      };
+    } else if (/Could not find the function|PGRST202|schema cache|does not exist|404/i.test(all)) {
+      info = {
+        title: '클라우드 저장소를 찾지 못했습니다',
+        desc: 'Supabase에 예산 함수가 없거나 이름이 다릅니다. SQL Editor에서 함수를 만든 뒤 다시 시도해 주세요.',
+        detail: text || code
+      };
+    } else if (/Failed to fetch|NetworkError|network|timed? ?out|ERR_|Load failed/i.test(all)) {
+      info = {
+        title: '인터넷에 연결하지 못했습니다',
+        desc: '연결 상태를 확인하고 다시 시도해 주세요.',
+        detail: text || code
+      };
+    } else if (/라이브러리/.test(text)) {
+      info = {
+        title: '동기화를 불러오지 못했습니다',
+        desc: '새로고침한 뒤 다시 시도해 주세요. 네트워크가 막힌 곳에서는 동기화 서버에 접속할 수 없습니다.',
+        detail: text
+      };
+    } else if (/permission denied|42501|JWT|Invalid API key|401|403/i.test(all)) {
+      info = {
+        title: '클라우드 키를 확인해 주세요',
+        desc: 'Supabase 프로젝트의 publishable 키와 함수 실행 권한을 확인해야 합니다.',
+        detail: text || code
+      };
+    }
+    showLockStage('error', info);
+  }
+
+  function bindLock() {
+    $('pinInput').addEventListener('input', onPinInput);
+    $('pinInput').addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); submitPin(); }
+    });
+    $('pinWrap').addEventListener('click', function () {
+      try { $('pinInput').focus({ preventScroll: true }); } catch (e) {}
+    });
+    $('pinOk').addEventListener('click', submitPin);
+    $('pinPeek').addEventListener('click', function () {
+      Lock.peek = !Lock.peek;
+      $('pinInput').type = Lock.peek ? 'text' : 'password';
+      $('pinPeek').textContent = Lock.peek ? '가리기' : '보기';
+      paintCells();
+      try { $('pinInput').focus({ preventScroll: true }); } catch (e) {}
+    });
+    $('pinKeep').addEventListener('change', function (e) {
+      var on = e.target.checked;
+      if (on && !pinStore.available()) {
+        e.target.checked = false;
+        showToast('이 브라우저에서는 이 기기 저장을 쓸 수 없습니다.');
+        return;
+      }
+      pinStore.setKeep(on);
+      if (!on) {
+        pinStore.clear();
+        Lock.savedPin = '';
+        $('pinClearPin').hidden = true;
+        showToast('이 기기에 저장된 비밀번호를 지웠습니다.');
+      }
+    });
+    $('pinClearPin').addEventListener('click', function () {
+      pinStore.clear();
+      pinStore.setKeep(false);
+      Lock.savedPin = '';
+      $('pinKeep').checked = false;
+      $('pinClearPin').hidden = true;
+      showToast('이 기기에 저장된 비밀번호를 지웠습니다.');
+    });
+    $('lockRetry').addEventListener('click', function () {
+      if (Lock.savedPin) attemptUnlock(Lock.savedPin, true);
+      else if (Lock.pin) attemptUnlock(Lock.pin, false);
+      else checkHasPin();
+    });
+  }
+
+  /* =========================================================
+     12. 초기화
+     ========================================================= */
+  function bind() {
+    $('monthSelect').addEventListener('change', function (e) {
+      setActiveMonth(e.target.value);
+    });
+    $('prevMonth').addEventListener('click', function () { stepMonth(-1); });
+    $('nextMonth').addEventListener('click', function () { stepMonth(1); });
+
+    $('btnAddExpense').addEventListener('click', addExpense);
+    $('btnAddIncome').addEventListener('click', addIncome);
+    $('btnNewMonth').addEventListener('click', openNewMonthDialog);
+    $('btnCopy').addEventListener('click', openCopyDialog);
+    $('btnExport').addEventListener('click', exportJson);
+    $('btnImport').addEventListener('click', function () { $('fileInput').click(); });
+    $('btnHelp').addEventListener('click', openHelpDialog);
+    $('btnDeleteMonth').addEventListener('click', openDeleteMonthDialog);
+    $('btnLock').addEventListener('click', function () { lockNow(); });
+
+    $('fileInput').addEventListener('change', function (e) {
+      var file = e.target.files && e.target.files[0];
+      if (file) importFile(file);
+      e.target.value = '';
+    });
+
+    var dialog = $('dialog');
+    $('dlgCancel').addEventListener('click', function () { dialog.close('cancel'); });
+    $('dlgOk').addEventListener('click', function () {
+      var keepOpen = false;
+      if (dialogConfirm) {
+        try {
+          keepOpen = dialogConfirm() === false;
+        } catch (err) {
+          keepOpen = true;
+          if (window.console) console.error(err);
+          showToast('처리하지 못했습니다. 다시 시도해 주세요.');
+        }
+      }
+      if (!keepOpen) dialog.close('confirm');
+    });
+    dialog.addEventListener('click', function (e) {
+      if (e.target === dialog) dialog.close('cancel');
+    });
+
+    window.addEventListener('beforeunload', function () {
+      if (pending && state && storage) {
+        try { storage.save(state); } catch (e) {}
+      }
+    });
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'hidden' && pending) flushSave();
+    });
+    window.addEventListener('online', function () {
+      if (pending) flushSave();
+    });
+  }
+
+  function boot() {
+    bindLock();
+    Lock.savedPin = pinStore.get();
+    showLockStage('checking');
+    Cloud.init();
+    if (Lock.savedPin) {
+      attemptUnlock(Lock.savedPin, true);
+      return;
+    }
+    checkHasPin();
+  }
+
+  /* 테스트·확장용 내보내기 (화면과 무관) */
+  globalThis.SalaryBudget = {
+    Core: Core,
+    Cloud: Cloud,
+    Lock: Lock
+  };
+
+  if (typeof document !== 'undefined') {
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', boot);
+    } else {
+      boot();
+    }
+  }
+})();
+</script>
+</body>
+</html>
